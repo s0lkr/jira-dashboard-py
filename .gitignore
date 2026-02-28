@@ -1,3 +1,11 @@
+# Segredos e Credenciais
 .env
-__pycache__/
+
+# Ambientes Virtuais e Cache do Python
 .venv/
+__pycache__/
+*.pyc
+
+# Logs Locais e Arquivos Temporários
+logs/
+raiox_jira.json

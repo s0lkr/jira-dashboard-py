@@ -1,3 +1,25 @@
 {
-    "editor.fontFamily": "JetBrains Mono"
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.fixAll": ["source.unusedImports"],  
+    "editor.defaultFormatter": "ms-python.python",
+    "workbench.sideBar.location": "right",
+    "workbench.iconTheme": "material-icon-theme",
+    "editor.fontFamily": "JetBrains Mono",
+    "chat.fontSize": 13,
+
+    /* Configurações para reduzir o spam de código automático */
+    
+    // 1. Desativa o texto fantasma (previsão de linhas inteiras) do Gemini/IA
+    "editor.inlineSuggest.enabled": true,
+
+    // 4. Desativa sugestões de "Snippets" (blocos de código prontos) no meio do IntelliSense
+    "editor.snippetSuggestions": "inline",
+
+    // 5. Controla como o IntelliSense aceita as sugestões
+    "editor.acceptSuggestionOnEnter": "on",
+    "editor.quickSuggestions": {
+        "other": true,
+        "comments": true,
+        "strings": true
+    }
 }

@@ -1,0 +1,100 @@
+/* =======================================================
+   TEMA: Enterprise Nightfall (Azul Profundo & Acabamento Flat)
+   ======================================================= */
+
+/* Fundo Geral e Texto Padrão */
+QWidget {
+    background-color: #1E222A; /* Azul-marinho muito escuro */
+    color: #ABB2BF;            /* Cinza claro/azulado para leitura confortável */
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 10pt;
+}
+
+/* Barra de Menus no Topo */
+QMenuBar {
+    background-color: #181A1F;
+    color: #ABB2BF;
+    border-bottom: 1px solid #282C34;
+    padding: 4px;
+}
+QMenuBar::item:selected {
+    background-color: #282C34;
+    border-radius: 4px;
+}
+
+/* Menus Suspensos (Dropdown) */
+QMenu {
+    background-color: #282C34;
+    color: #ABB2BF;
+    border: 1px solid #3E4451;
+    border-radius: 4px;
+    padding: 5px;
+}
+QMenu::item:selected {
+    background-color: #61AFEF; /* Azul vibrante no hover */
+    color: #282C34;
+    border-radius: 3px;
+}
+
+/* Tabela Principal */
+QTableWidget {
+    background-color: #21252B;
+    alternate-background-color: #282C34; /* Efeito zebrado sutil nas linhas */
+    color: #E5C07B; /* Cor diferenciada para o texto dos tickets (Dourado/Amarelo suave) */
+    gridline-color: #3E4451;
+    border: none;
+    border-radius: 8px;
+    padding: 5px;
+}
+
+/* Cabeçalho da Tabela */
+QHeaderView::section {
+    background-color: #282C34;
+    color: #61AFEF; /* Azul vibrante para destacar as colunas */
+    font-weight: bold;
+    padding: 8px;
+    border: none;
+    border-bottom: 2px solid #61AFEF;
+}
+
+/* Linha Selecionada na Tabela */
+QTableWidget::item:selected {
+    background-color: #3E4451;
+    color: #FFFFFF;
+}
+
+/* Rodapé (Status Bar) */
+QStatusBar {
+    background-color: #181A1F;
+    color: #98C379; /* Verde suave para passar sensação de status "OK/Sincronizado" */
+    font-weight: bold;
+    border-top: 1px solid #282C34;
+}
+
+/* Listas (Para a Janela de Logs) */
+QListWidget {
+    background-color: #181A1F;
+    color: #ABB2BF;
+    border: 1px solid #3E4451;
+    border-radius: 5px;
+    padding: 5px;
+}
+
+/* Barras de Rolagem (Scrollbars) customizadas e finas */
+QScrollBar:vertical {
+    border: none;
+    background: #1E222A;
+    width: 10px;
+    margin: 0px 0px 0px 0px;
+}
+QScrollBar::handle:vertical {
+    background: #3E4451;
+    min-height: 20px;
+    border-radius: 5px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #5C6370;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
