@@ -53,7 +53,9 @@ class MainWindow(QMainWindow):
         header = self.tabela.horizontalHeader()
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         
-        self.pasta_logs = "logs"
+        caminho_usuario = os.path.expanduser("~")
+        
+        self.pasta_logs = os.path.join(caminho_usuario,"Documents", "jira_dashboard_logs")
         if not os.path.exists(self.pasta_logs):
             os.makedirs(self.pasta_logs) #criar pasta logs se não existir
 
