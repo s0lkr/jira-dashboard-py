@@ -10,14 +10,12 @@ class JiraAPIClient:
         self.auth = HTTPBasicAuth(jira_email, api_key)
         self.icon_cache = {}
     
-    def obter_novos_tickets(self):
+    def obter_novos_tickets(self, jql_query):
         """
-        Busca por issues, filtra os dados relevantes e os retorna em uma lista
+        Busca por issues, filtra os dados relevantes e os retorna em uma lista usando JQL personalizado direto na tela
         """
         url = f"{self.base_url}/rest/api/3/search/jql"
-        jql_query = 'type IN standardIssueTypes() AND status IN ("Em análise", Aberto) AND project = SCRUM'        
         
-        # adicionamos o 'fields' para forçar o Jira a devolver o que queremos
         params = {
             'jql': jql_query,
             'fields': 'key,summary,status,priority'

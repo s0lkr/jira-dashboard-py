@@ -14,9 +14,10 @@ from PyQt6.QtWidgets import (
     QDialog,
     QListWidget,
     QSystemTrayIcon,
-    QStyle
+    QStyle,
+    QInputDialog
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSettings, QTimer
 from PyQt6.QtGui import QIcon, QPixmap
 from datetime import datetime
 
@@ -58,13 +59,23 @@ class MainWindow(QMainWindow):
 
         self.historico_logs = []
         self.carregar_logs_do_dia()
+        
+        self.configuracoes = QSettings("S0lkrCorp", "JiraDashboard")
+        # Tenta ler do registro; se não existir, inicia totalmente vazio ("")
+        self.jql_atual = self.configuracoes.value("jql_customizado", "")
 
-        # Inicia o worker para buscar dados do Jira
-        self.worker = JiraPoller()
+        # Inicia o worker passando o JQL (mesmo que esteja vazio)
+        self.worker = JiraPoller(self.jql_atual)
         self.worker.dados_recebidos.connect(self.atualizar_tabela)
+        self.worker.notificacao_disparada.connect(self.mostrar_notificacao)
+        self.worker.busca_iniciada.connect(self.aviso_busca_automatica)
+        self.worker.start()
         
         # menu top
         menu_bar = self.menuBar()
+        
+        acao_jql = menu_bar.addAction("Configurar Filtro JQL")
+        acao_jql.triggered.connect(self.abrir_input_jql)
         
         acao_logs = menu_bar.addAction("Logs do Sistema")
         acao_logs.triggered.connect(self.abrir_janela_logs)
@@ -82,12 +93,39 @@ class MainWindow(QMainWindow):
         icone_padrao = self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
         self.tray_icon.setIcon(icone_padrao)
         self.tray_icon.show() # Fica escondidinho perto do relógio
+        
+        if not self.jql_atual:
+            self.status_bar.showMessage("Nenhum JQL configurado. Por favor, insira um JQL válido para começar a busca.")
+            QTimer.singleShot(500, self.abrir_input_jql)
 
         # conecta notificação do worker com a função que mostra notificação
         self.worker.notificacao_disparada.connect(self.mostrar_notificacao)
 
         # inicia o worker para buscar dados do Jira
         self.worker.start()
+        
+    def abrir_input_jql(self):
+        """Abre um pop-up para o usuário digitar a nova query JQL."""
+        novo_jql, ok = QInputDialog.getText(
+            self,
+            "Configurar Filtro JQL",
+            "Insira a sua query do Jira (JQL):",
+            text=self.jql_atual 
+        )
+        
+        # Só atualiza se o usuário deu OK e digitou algo
+        if ok and novo_jql.strip():
+            self.jql_atual = novo_jql
+            self.configuracoes.setValue("jql_customizado", self.jql_atual)
+            
+            self.tabela.setRowCount(0)
+            self.status_bar.showMessage("Aplicando novo filtro JQL...")
+            
+            self.worker.atualizar_jql(self.jql_atual)
+            self.registrar_log(f"SISTEMA: Filtro JQL alterado para: {self.jql_atual}")
+        elif not self.jql_atual:
+            # Se ele cancelar na primeira vez e estiver vazio, avisa no rodapé
+            self.status_bar.showMessage("Nenhum JQL configurado. O sistema está em pausa.")
 
     def atualizar_tabela(self, tickets):
         """Este método (slot) é chamado quando o worker emite o sinal"""
@@ -271,3 +309,7 @@ class MainWindow(QMainWindow):
         
         # --- NOVO: Anota a entrada de um ticket no histórico! ---
         self.registrar_log(f"ENTRADA: Identificado {titulo} ({mensagem})")
+        
+    def aviso_busca_automatica(self):
+        """Muda o rodapé visualmente quando o loop de 1 minuto acorda."""
+        self.status_bar.showMessage("Sincronização automática em andamento...")
