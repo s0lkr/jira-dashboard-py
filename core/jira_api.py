@@ -15,9 +15,9 @@ class JiraAPIClient:
         Busca por issues, filtra os dados relevantes e os retorna em uma lista
         """
         url = f"{self.base_url}/rest/api/3/search/jql"
-        jql_query = 'type IN standardIssueTypes() AND status = "Aberto"'        
+        jql_query = 'type IN standardIssueTypes() AND status IN ("Em análise", Aberto) AND project = SCRUM'        
         
-        # 1. Adicionamos o 'fields' para forçar o Jira a devolver o que queremos
+        # adicionamos o 'fields' para forçar o Jira a devolver o que queremos
         params = {
             'jql': jql_query,
             'fields': 'key,summary,status,priority'
@@ -107,7 +107,7 @@ class JiraAPIClient:
     
     def descobrir_transicoes(self, ticket_id):
         """
-        Faz um GET para descobrir os IDs numéricos das transições disponíveis e retorna em texto.
+        Faz um GET para descobrir as transições disponíveis e retorna uma lista de dicionários.
         """
         url = f"{self.base_url}/rest/api/3/issue/{ticket_id}/transitions"
         headers = {"Accept": "application/json"}
@@ -117,13 +117,10 @@ class JiraAPIClient:
             resposta.raise_for_status()
             
             transicoes = resposta.json().get("transitions", [])
-            resultado = f"Transições disponíveis para {ticket_id}:\n\n"
-            
-            for t in transicoes:
-                resultado += f"-> {t['name']} (ID: {t['id']})\n"
-                
-            return resultado
+            # Extrai apenas o ID e o Nome de cada transição e devolve como lista
+            return [{"id": t["id"], "name": t["name"]} for t in transicoes]
             
         except requests.RequestException as e:
-            return f"Erro ao buscar transições do Jira:\n{e}"
+            print(f"Erro ao buscar transições do ticket {ticket_id}:\n{e}")
+            return None
             

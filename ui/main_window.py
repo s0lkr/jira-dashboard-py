@@ -115,9 +115,9 @@ class MainWindow(QMainWindow):
                 
             self.tabela.setItem(linha, 3, item_prioridade)
             
-            btn_analise = QPushButton("Em análise")
+            btn_acoes = QPushButton("Alterar Status ▾")
             # Um pequeno estilo pro botão chamar a atenção sem quebrar o layout
-            btn_analise.setStyleSheet("""
+            btn_acoes.setStyleSheet("""
                 QPushButton {
                     background-color: #0052CC; 
                     color: white; 
@@ -128,11 +128,11 @@ class MainWindow(QMainWindow):
             """)
             
             # conecta o clique do botão a uma função, passando o ID do ticket de forma segura
-            btn_analise.clicked.connect(
-                lambda checked, t_id=ticket.get("id"): self.enviar_comando_via_botao(t_id, 21)
+            btn_acoes.clicked.connect(
+                lambda checked, t_id=ticket.get("id"), btn=btn_acoes: self.abrir_menu_transicoes(t_id, btn)
             )
             
-            self.tabela.setCellWidget(linha, 4, btn_analise) # Injeta na 5ª coluna
+            self.tabela.setCellWidget(linha, 4, btn_acoes)
 
             # Atualiza o rodapé com a hora exata da última sincronização
         from datetime import datetime
@@ -170,6 +170,39 @@ class MainWindow(QMainWindow):
         if linha_alvo != -1:
             # Chama a sua função original aproveitando a mesma lógica
             self.enviar_comando(ticket_id, id_transicao, linha_alvo)
+            
+    def abrir_menu_transicoes(self, ticket_id, botao_widget):
+        """Busca as transições ao vivo no Jira e desenha um menu abaixo do botão."""
+        # 1. Feedback visual imediato
+        texto_original = botao_widget.text()
+        botao_widget.setText("Buscando...")
+        botao_widget.repaint() # Força a tela a atualizar o texto na hora
+
+        # 2. Consulta o Jira
+        transicoes = self.worker.cliente.descobrir_transicoes(ticket_id)
+        
+        # 3. Restaura o botão
+        botao_widget.setText(texto_original)
+
+        if not transicoes:
+            QMessageBox.warning(self, "Aviso", f"Nenhuma transição encontrada para o ticket {ticket_id}.")
+            return
+
+        # 4. Constrói o menu flutuante
+        menu = QMenu(self)
+        mapa_acoes = {} # Dicionário para lembrar qual botão pertence a qual ID
+        
+        for t in transicoes:
+            acao = menu.addAction(t["name"])
+            mapa_acoes[acao] = t["id"]
+
+        # 5. Exibe o menu ancorado exatamente no canto inferior esquerdo do botão
+        acao_escolhida = menu.exec(botao_widget.mapToGlobal(botao_widget.rect().bottomLeft()))
+
+        # 6. Se o usuário clicou em uma opção, dispara a mudança de status
+        if acao_escolhida:
+            id_transicao = mapa_acoes[acao_escolhida]
+            self.enviar_comando_via_botao(ticket_id, id_transicao)
           
     def enviar_comando(self, ticket_id, id_transicao, linha):
         # Usa o cliente worker pra enviar o POST
