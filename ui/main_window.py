@@ -1,4 +1,5 @@
 import os
+import webbrowser
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QMainWindow,
@@ -22,6 +23,7 @@ from PyQt6.QtGui import QIcon, QPixmap
 from datetime import datetime
 
 from ui.worker import JiraPoller
+from core.config import jira_base_url
 
 
 class MainWindow(QMainWindow):
@@ -46,6 +48,7 @@ class MainWindow(QMainWindow):
         self.tabela.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.tabela.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tabela.customContextMenuRequested.connect(self.abrir_menu)
+        self.tabela.cellDoubleClicked.connect(self.abrir_ticket_navegador)
         
         layout.addWidget(self.tabela)
 
@@ -315,3 +318,15 @@ class MainWindow(QMainWindow):
     def aviso_busca_automatica(self):
         """Muda o rodapé visualmente quando o loop de 1 minuto acorda."""
         self.status_bar.showMessage("Sincronização automática em andamento...")
+        
+    def abrir_ticket_navegador(self, linha, coluna):
+        """ Abre o ticket no navegador padrão quando o usuário dá um duplo clique em qualquer célula da linha."""
+        if coluna == 1:
+            item_id = self.tabela.item(linha, 0)
+            
+            if item_id:
+                ticket_id = item_id.text()
+                url_ticket = f"{jira_base_url}/browse/{ticket_id}"
+                webbrowser.open(url_ticket)
+                
+                self.registrar_log(f"ABRIU: Ticket {ticket_id} aberto no navegador")
