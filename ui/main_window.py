@@ -32,11 +32,29 @@ from datetime import datetime
 from ui.worker import JiraPoller
 from ui.login import LoginDialog
 
+def resource_path(relative_path):
+    """Retorna o caminho absoluto para os recursos, funcionando no dev e no .exe"""
+    try:
+        # O PyInstaller cria uma pasta temporária e guarda o caminho no _MEIPASS ele serve pra acessar arquivos depois de compilado, precisei colocar pra ele achar o icone
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 class MainWindow(QMainWindow):
     """inicializa o GUI"""
     def __init__(self):
         super().__init__()
+        
+        import ctypes
+        try:
+            myappid = 's0lkrcorp.sightline.hub.1.0' 
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        except Exception:
+            pass
+
+        caminho_icone = resource_path(os.path.join("ui", "assets", "app_icon.png"))
+        self.setWindowIcon(QIcon(caminho_icone))
 
         self.setWindowTitle("Sightline Hub - Tickets Monitors")
         self.resize(800, 600)
@@ -74,28 +92,23 @@ class MainWindow(QMainWindow):
         
         self.configuracoes = QSettings("S0lkrCorp", "JiraDashboard")
         
-        self.enviar_telemetria_telegram() #envia o log de para o telegram uma vez ao dia
-        
-        self.jira_url = self.configuracoes.value("jira_url", "")
         self.jira_email = self.configuracoes.value("jira_email", "")
         
-        if self.jira_email:
-            if not self.verificar_autorizacao_remota(self.jira_email):
-                self.mostrar_tela_bloqueio(self.jira_email)
-        
-        # pegar token do keyring
-        if self.jira_email:
-            self.jira_token = keyring.get_password("JiraDashboard", self.jira_email)
-        else:
-            self.jira_token = None
+        # BARREIRA DE LICENÇA
+        if not self.jira_email or not self.verificar_autorizacao_remota(self.jira_email):
             
-        # se não encontrar nenhuma ele abre a tela de login
-        if not self.jira_url or not self.jira_email or not self.jira_token:
+            self.mostrar_tela_bloqueio(self.jira_email)
+        
+        self.enviar_telemetria_telegram()
+        
+        self.jira_url = self.configuracoes.value("jira_url", "")
+        self.jira_token = keyring.get_password("JiraDashboard", self.jira_email)
+            
+        if not self.jira_url or not self.jira_token:
             self.solicitar_credenciais()
             
-            # se o usuario fechar a tela de login sem preencher, fecha o programa
-            if not self.jira_url or not self.jira_email or not self.jira_token:
-                QMessageBox.critical(self, "Erro", "Credenciais não configuradas. O programa será encerrado.")
+            if not self.jira_url or not self.jira_token:
+                QMessageBox.critical(self, "Erro", "Credenciais do Jira não configuradas. O programa será encerrado.")
                 sys.exit()
         
         # Tenta ler do registro; se não existir, inicia totalmente vazio ("")
@@ -456,6 +469,7 @@ class MainWindow(QMainWindow):
         threading.Thread(target=_executar_beacon, daemon=True).start()
 
     def verificar_autorizacao_remota(self, email_usuario):
+        """Valida a licença corporativa lendo a última instrução"""
         bot_token = self.desofuscar_token()
         meu_chat_id = "5209846899"
         hwid_local = self.obter_hwid()
@@ -463,28 +477,43 @@ class MainWindow(QMainWindow):
         url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
         
         try:
-            res = requests.get(url, timeout=5).json()
-            autorizado = False
+            res = requests.get(url, timeout=10).json()
+            if not res.get("ok"): 
+                return False
             
-            if res.get("ok"):
-                for m in reversed(res.get("result", [])):
-                    msg_obj = m.get("message", m.get("channel_post", {}))
-                    if str(msg_obj.get("from", {}).get("id")) != meu_chat_id:
-                        continue
+            # Lê o histórico da mensagem mais NOVA para a mais VELHA
+            for m in reversed(res.get("result", [])):
+                msg_obj = m.get("message") or m.get("channel_post", {})
+                
+                remetente_id = str(msg_obj.get("from", {}).get("id"))
+                if remetente_id != meu_chat_id:
+                    continue
                         
-                    texto = msg_obj.get("text", "")
-                    
-                    # verifica se o e-mail E o HWID estão na mesma linha de comando
-                    if f"/allow {email_usuario}" in texto and hwid_local in texto:
-                        autorizado = True
-                        break
-                    
-                    if f"/revoke {email_usuario}" in texto:
-                        self.executar_limpeza_seguranca()
+                texto = msg_obj.get("text", "").lower()
+                email_lower = email_usuario.lower()
+                
+                # Ignora qualquer mensagem que não seja sobre o usuário atual
+                if email_lower not in texto:
+                    continue
+                
+                # Encontrou a instrução MAIS RECENTE sobre este e-mail
+                if "/allow" in texto:
+                    # Verifica se a licença está atrelada ao hardware correto
+                    if hwid_local.lower() in texto:
+                        return True
+                    else:
+                        # O e-mail foi liberado, mas para outro HWID (tentativa de cópia do software)
                         return False
+                
+                if "/revoke" in texto:
+                    # O administrador revogou ativamente o acesso
+                    self.executar_limpeza_seguranca()
+                    return False
             
-            return autorizado
-        except:
+            # Se varreu todo o histórico e não encontrou menção ao e-mail, está pendente
+            return False
+            
+        except Exception:
             return False
 
     def mostrar_tela_bloqueio(self, email_atual):
