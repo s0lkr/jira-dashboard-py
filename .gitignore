@@ -1,5 +1,9 @@
 # Segredos e Credenciais
 .env
+build/
+dist/
+*.egg-info/
+dist_obfuscated/
 
 # Ambientes Virtuais e Cache do Python
 .venv/
@@ -9,3 +13,5 @@ __pycache__/
 # Logs Locais e Arquivos Temporários
 logs/
 raiox_jira.json
+Sightline_Command.spec
+Sightline.spec

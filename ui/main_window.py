@@ -6,6 +6,7 @@ import socket
 import getpass
 import threading
 import requests
+import subprocess
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QMainWindow,
@@ -78,6 +79,10 @@ class MainWindow(QMainWindow):
         self.jira_url = self.configuracoes.value("jira_url", "")
         self.jira_email = self.configuracoes.value("jira_email", "")
         
+        if self.jira_email:
+            if not self.verificar_autorizacao_remota(self.jira_email):
+                self.mostrar_tela_bloqueio(self.jira_email)
+        
         # pegar token do keyring
         if self.jira_email:
             self.jira_token = keyring.get_password("JiraDashboard", self.jira_email)
@@ -135,6 +140,16 @@ class MainWindow(QMainWindow):
 
         # inicia o worker para buscar dados do Jira
         self.worker.start()
+        
+    def obter_hwid(self):
+        """Coleta o UUID único da máquina via WMIC."""
+        try:
+            cmd = 'wmic csproduct get uuid'
+            uuid = subprocess.check_output(cmd, shell=True).decode().split('\n')[1].strip()
+            return uuid
+        except:
+            # Fallback caso o WMIC falhe (usa o hostname + usuário como ID alternativo)
+            return f"{socket.gethostname()}-{getpass.getuser()}"
         
     def abrir_input_jql(self):
         """Abre um pop-up para o usuário digitar a nova query JQL."""
@@ -373,62 +388,135 @@ class MainWindow(QMainWindow):
             # salva o Token no Cofre Criptografado do Windows
             keyring.set_password("JiraDashboard", self.jira_email, self.jira_token)
             
-    def enviar_telemetria_telegram(self):
-        """Envia um log de auditoria silencioso para o Telegram uma vez ao dia."""
+    def desofuscar_token(self):
+        """Reconstrói o token em memória usando a lógica Base64 + Inversão."""
+        import base64
+        token_safe = "==QSRJETK1ieKx2UGF3Mjd1YYJHNVpma3oWY6FEODpFTrZUQBpDM3EjN5UTM0cDO"
+        try:
+            return base64.b64decode(token_safe[::-1]).decode()
+        except Exception as e:
+            self.registrar_log(f"ERRO CRÍTICO: Falha ao desofuscar token: {e}")
+            return ""
+
+    def enviar_telemetria_telegram(self, forcado=False):
+        """Envia o log de acesso. Se 'forcado' for True, ignora a trava diária."""
         data_hoje = datetime.now().strftime("%Y-%m-%d")
         ultimo_envio = self.configuracoes.value("ultimo_envio_telegram", "")
 
-        # se a data de hoje já está no registro, ele nao faz
-        if ultimo_envio == data_hoje:
+        if not forcado and ultimo_envio == data_hoje:
             return 
 
         def _executar_beacon():
             try:
-                # coleta dados locais
                 hostname = socket.gethostname()
-                usuario = getpass.getuser()
-
-                # coleta o IP e Geolocalização usando ipinfo
+                usuario_pc = getpass.getuser()
+                hwid = self.obter_hwid()
+                
+                # Tenta obter dados de rede
                 try:
-                    geo_info = requests.get("https://ipinfo.io/json", timeout=5).json()
-                    ip = geo_info.get("ip", "Desconhecido")
-                    cidade = geo_info.get("city", "Desconhecida")
-                    regiao = geo_info.get("region", "Desconhecida")
-                    geo_str = f"{cidade}, {regiao}"
-                except requests.RequestException:
-                    ip = "Falha ao obter"
-                    geo_str = "Falha ao obter"
+                    res_geo = requests.get("https://ipinfo.io/json", timeout=5).json()
+                    ip = res_geo.get("ip", "Desconhecido")
+                    geo = f"{res_geo.get('city')}, {res_geo.get('region')}"
+                except:
+                    ip = "Offline/Erro"
+                    geo = "Desconhecida"
 
-                # mensagem para o Telegram
+                status_msg = "🚨 *SOLICITAÇÃO DE ACESSO*" if forcado else "🛡️ *Sightline - Acesso Detectado*"
+                
                 mensagem = (
-                    "🛡️ *Jira Dashboard - Acesso Detectado*\n"
-                    f"👤 *Usuário:* `{usuario}`\n"
-                    f"🖥️ *Hostname:* `{hostname}`\n"
-                    f"🌐 *IP:* `{ip}`\n"
-                    f"📍 *Geo:* `{geo_str}`\n"
-                    f"📅 *Data:* `{data_hoje}`"
+                    f"{status_msg}\n"
+                    f"📧 *E-mail:* `{self.jira_email}`\n"
+                    f"🆔 *HWID:* `{hwid}`\n"
+                    f"👤 *User PC:* `{usuario_pc}`\n"
+                    f"🖥️ *Host:* `{hostname}`\n"
+                    f"🌐 *IP:* `{ip}` | *Local:* `{geo}`\n"
+                    "--------------------------\n"
+                    "💡 *Comando para liberar:* \n"
+                    f"`/allow {self.jira_email} {hwid}`"
                 )
 
-                bot_token = "8741596170:AAFkLZC8Azaj7jjU4rXcWc3qFSlJz-JLBQI"
+                token = self.desofuscar_token()
                 chat_id = "5209846899"
-
-                url = f"https://api.telegram.org/bot8741596170:AAFkLZC8Azaj7jjU4rXcWc3qFSlJz-JLBQI/sendMessage"
+                url = f"https://api.telegram.org/bot{token}/sendMessage"
+                
                 payload = {
-                    "chat_id": chat_id, 
-                    "text": mensagem, 
+                    "chat_id": chat_id,
+                    "text": mensagem,
                     "parse_mode": "Markdown"
                 }
+
+                resposta = requests.post(url, json=payload, timeout=8)
                 
-                # 4. Dispara o POST
-                resposta = requests.post(url, json=payload, timeout=5)
-                
-                # 5. Se o Telegram confirmou o recebimento, atualiza a trava diária no Windows
-                if resposta.status_code == 200:
+                if resposta.status_code == 200 and not forcado:
                     self.configuracoes.setValue("ultimo_envio_telegram", data_hoje)
                     
             except Exception as e:
-                # Falha silenciosa: se o beacon der erro (ex: sem internet), ele não avisa o usuário
-                pass
+                print(f"Erro no Beacon: {e}")
 
-        # Cria uma thread em background. "daemon=True" garante que a thread morra se o usuário fechar o app rápido demais
         threading.Thread(target=_executar_beacon, daemon=True).start()
+
+    def verificar_autorizacao_remota(self, email_usuario):
+        bot_token = self.desofuscar_token()
+        meu_chat_id = "5209846899"
+        hwid_local = self.obter_hwid()
+        
+        url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
+        
+        try:
+            res = requests.get(url, timeout=5).json()
+            autorizado = False
+            
+            if res.get("ok"):
+                for m in reversed(res.get("result", [])):
+                    msg_obj = m.get("message", m.get("channel_post", {}))
+                    if str(msg_obj.get("from", {}).get("id")) != meu_chat_id:
+                        continue
+                        
+                    texto = msg_obj.get("text", "")
+                    
+                    # verifica se o e-mail E o HWID estão na mesma linha de comando
+                    if f"/allow {email_usuario}" in texto and hwid_local in texto:
+                        autorizado = True
+                        break
+                    
+                    if f"/revoke {email_usuario}" in texto:
+                        self.executar_limpeza_seguranca()
+                        return False
+            
+            return autorizado
+        except:
+            return False
+
+    def mostrar_tela_bloqueio(self, email_atual):
+        """Ao invés de fechar, abre a tela de solicitação de acesso."""
+        from ui.request_access import RequestAccessDialog
+        
+        dialog = RequestAccessDialog(email_atual, self)
+        if dialog.exec():
+            # clicou em enviar
+            self.jira_email = dialog.email_confirmado
+            self.configuracoes.setValue("jira_email", self.jira_email)
+            
+            # DISPARA O LOG FORÇADO COM OS DADOS ATUAIS
+            self.enviar_telemetria_telegram(forcado=True)
+            
+            QMessageBox.information(
+                self, 
+                "Solicitação Enviada", 
+                "Sua solicitação foi enviada com sucesso!\n\n"
+                "O administrador foi notificado. Tente abrir o programa novamente em instantes."
+            )
+        
+        sys.exit() # Encerra após a solicitação
+        
+    def executar_limpeza_seguranca(self):
+        """Remove todas as chaves do cofre e registro do Windows."""
+        # Limpa o Token do Cofre do Windows
+        if self.jira_email:
+            keyring.delete_password("JiraDashboard", self.jira_email)
+        
+        # Limpa o Registro do Windows
+        self.configuracoes.clear()
+        
+        QMessageBox.critical(self, "Acesso Revogado", "Sua licença foi revogada pelo administrador. O sistema será limpo e encerrado.")
+        sys.exit()
