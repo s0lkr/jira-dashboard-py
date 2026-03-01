@@ -1,3 +1,5 @@
 HKEY_CURRENT_USER \ Software \ S0lkrCorp \ JiraDashboard #email e site base
 
 o token fica criptografado dentro do windows credential manager
+
+pyinstaller --noconsole --onefile --name="Sightline" --icon="ui/assets/app_icon.png" --add-data="ui;ui" main.py
