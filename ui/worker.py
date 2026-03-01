@@ -1,3 +1,4 @@
+from email.mime import base
 import time
 from PyQt6.QtCore import QThread, pyqtSignal
 from core.jira_api import JiraAPIClient
@@ -8,9 +9,9 @@ class JiraPoller(QThread):
     notificacao_disparada = pyqtSignal(str, str)
     busca_iniciada = pyqtSignal()
 
-    def __init__(self, jql_inicial):
+    def __init__(self, jql_inicial, base_url, email, api_token):
         super().__init__()
-        self.cliente = JiraAPIClient()
+        self.cliente = JiraAPIClient(base_url, email, api_token)
         self._forcar_busca = False
         self.tickets_vistos = set() 
         self.primeira_busca = True 

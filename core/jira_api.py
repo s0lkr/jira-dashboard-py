@@ -1,14 +1,12 @@
 import requests
 import json
 from requests.auth import HTTPBasicAuth
-from core.config import api_key, jira_base_url, jira_email
-
 
 class JiraAPIClient:
-    def __init__(self):
-        self.base_url = jira_base_url
-        self.auth = HTTPBasicAuth(jira_email, api_key)
-        self.icon_cache = {}
+    def __init__(self, base_url, email, api_token):
+        self.base_url = base_url
+        self.auth = HTTPBasicAuth(email, api_token)
+        self.icon_cache = {}  # Cache para ícones de prioridade
     
     def obter_novos_tickets(self, jql_query):
         """

